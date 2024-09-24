@@ -38,7 +38,7 @@ func TestBitArray_GetData(t *testing.T) {
 	bitMap := NewBitArray(8)
 	bitMap.SetBitMust(1)
 	bitMap.SetBitMust(2)
-	assert.Equal(t, bitMap.Data, []uint8{0b110})
+	assert.Equal(t, bitMap.data, []int64{0x6})
 }
 
 func TestBitArray_GetData63(t *testing.T) {
@@ -46,18 +46,18 @@ func TestBitArray_GetData63(t *testing.T) {
 	bitMap.SetBitMust(1)
 	bitMap.SetBitMust(2)
 	bitMap.SetBitMust(63)
-	assert.Equal(t, bitMap.Data, []uint8{0b110, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0b10000000})
+	assert.Equal(t, bitMap.GetData(), []int64{-9223372036854775802})
 }
 
 func TestBitArray_SetData(t *testing.T) {
-	bitMap := BitArray{Data: []uint8{0b110}}
+	bitMap := BitArray{data: []int64{0b110}}
 	assert.Equal(t, bitMap.GetBit(1), true)
 	assert.Equal(t, bitMap.GetBit(2), true)
 }
 
 func TestBitArray_SetData2(t *testing.T) {
 	bitMap := NewBitArray(64)
-	bitMap.SetData([]uint8{0b110})
+	bitMap.SetData([]int64{0b110})
 	assert.Equal(t, bitMap.GetBit(1), true)
 	assert.Equal(t, bitMap.GetBit(2), true)
 }
