@@ -83,7 +83,7 @@ func (t *BitArray) GetSize() (size uint64) {
 
 func (t *BitArray) GetBit(i uint64) bool {
 	bitBucket, bitPos := bitArrayBitBucketPosHelper(i)
-	if t.size < bitBucket {
+	if t.size <= bitBucket {
 		return false
 	}
 	if (t.data[bitBucket] & (1 << bitPos)) == 0 {

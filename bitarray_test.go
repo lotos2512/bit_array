@@ -51,6 +51,7 @@ func TestBitArray_GetData63(t *testing.T) {
 
 func TestBitArray_SetData(t *testing.T) {
 	bitMap := BitArray{data: []int64{0b110}}
+	bitMap.size = uint64(len(bitMap.data))
 	assert.Equal(t, bitMap.GetBit(1), true)
 	assert.Equal(t, bitMap.GetBit(2), true)
 }
@@ -140,4 +141,38 @@ func TestBitArray_Intersection(t *testing.T) {
 	bitMap2.SetBitMust(3)
 
 	assert.Equal(t, true, bitMap1.Intersection(bitMap2))
+}
+
+func TestBitArrayWithOwerFlow(t *testing.T) {
+	bitMap1 := NewBitArray(82_074_042)
+	err := bitMap1.SetBit(82_074_100)
+	assert.Equal(t, ErrorBadIndex, err)
+
+	err = bitMap1.SetBit(0)
+	assert.Nil(t, err)
+
+	err = bitMap1.SetBit(2)
+	assert.Nil(t, err)
+
+	err = bitMap1.SetBit(3)
+	assert.Nil(t, err)
+
+	assert.Equal(t, false, bitMap1.GetBit(82_074_100))
+	assert.Equal(t, true, bitMap1.GetBit(0))
+	assert.Equal(t, true, bitMap1.GetBit(2))
+	assert.Equal(t, true, bitMap1.GetBit(3))
+}
+
+func TestBitArrayMinPos(t *testing.T) {
+	bitMap1 := NewBitArray(1)
+
+	err := bitMap1.SetBit(0)
+	assert.Nil(t, err)
+
+	err = bitMap1.SetBit(1)
+	assert.Nil(t, err)
+
+	assert.Equal(t, true, bitMap1.GetBit(0))
+	assert.Equal(t, true, bitMap1.GetBit(1))
+	assert.Equal(t, false, bitMap1.GetBit(2))
 }
