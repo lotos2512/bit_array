@@ -154,3 +154,128 @@ func BenchmarkMemory_FromData(b *testing.B) {
 		_ = ba.Capacity()
 	}
 }
+
+// --- Режим 1: sparseIndices (≤64 установленных бита, храним []uint64 индексов) ---
+
+func BenchmarkMode1_Indices_SetBit(b *testing.B) {
+	b.ReportAllocs()
+	ba := NewBitArray(benchCap)
+	// Держим ≤64 бита — не переходим в sparseList
+	indices := make([]uint64, 32)
+	for i := range indices {
+		indices[i] = uint64(i * 1000)
+	}
+	for _, i := range indices {
+		ba.SetBitMust(i)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ba.SetBitMust(indices[i%len(indices)])
+	}
+}
+
+func BenchmarkMode1_Indices_GetBit(b *testing.B) {
+	b.ReportAllocs()
+	ba := NewBitArray(benchCap)
+	for i := uint64(0); i < 32; i++ {
+		ba.SetBitMust(i * 1000)
+	}
+	indices := make([]uint64, 64)
+	for i := range indices {
+		indices[i] = uint64(i * 100000)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = ba.GetBit(indices[i%len(indices)])
+	}
+}
+
+// --- Режим 2: sparseList (много битов, но <50% bucket'ов — храним []sparseEntry) ---
+
+func BenchmarkMode2_SparseList_SetBit(b *testing.B) {
+	b.ReportAllocs()
+	const capBits = 8_000_000
+	const step = 500
+	ba := NewBitArray(capBits)
+	for i := uint64(0); i < ba.Capacity(); i += step {
+		ba.SetBitMust(i)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ba.SetBitMust(uint64((i * 500) % int(ba.Capacity())))
+	}
+}
+
+func BenchmarkMode2_SparseList_GetBit(b *testing.B) {
+	b.ReportAllocs()
+	const capBits = 8_000_000
+	const step = 500
+	ba := NewBitArray(capBits)
+	for i := uint64(0); i < ba.Capacity(); i += step {
+		ba.SetBitMust(i)
+	}
+	indices := []uint64{0, 500, 1000, 10000, 100000, 4000000, 7999500}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = ba.GetBit(indices[i%len(indices)])
+	}
+}
+
+func BenchmarkMode2_SparseList_SparseBuckets(b *testing.B) {
+	b.ReportAllocs()
+	const capBits = 8_000_000
+	const step = 500
+	ba := NewBitArray(capBits)
+	for i := uint64(0); i < ba.Capacity(); i += step {
+		ba.SetBitMust(i)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = ba.SparseBuckets()
+	}
+}
+
+// --- Режим 3: dense (data — полный []int64, >50% bucket'ов непусто) ---
+
+func BenchmarkMode3_Dense_SetBit(b *testing.B) {
+	b.ReportAllocs()
+	n := uint64(64 * 1000) // 1000 bucket'ов; dense при >500 непустых
+	ba := NewBitArray(n)
+	for i := uint64(0); i < n; i += 2 {
+		ba.SetBitMust(i)
+	}
+	ba.SetBitMust(32000) // ещё один bucket (500*64), чтобы >500 и переход в dense
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ba.SetBitMust(uint64(i % int(n)))
+	}
+}
+
+func BenchmarkMode3_Dense_GetBit(b *testing.B) {
+	b.ReportAllocs()
+	n := uint64(64 * 1000)
+	ba := NewBitArray(n)
+	for i := uint64(0); i < n; i += 2 {
+		ba.SetBitMust(i)
+	}
+	ba.SetBitMust(32000)
+	indices := []uint64{0, 1, 100, 1000, 10000, 50000}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = ba.GetBit(indices[i%len(indices)])
+	}
+}
+
+func BenchmarkMode3_Dense_GetData(b *testing.B) {
+	b.ReportAllocs()
+	n := uint64(64 * 1000)
+	ba := NewBitArray(n)
+	for i := uint64(0); i < n; i += 2 {
+		ba.SetBitMust(i)
+	}
+	ba.SetBitMust(32000)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = ba.GetData()
+	}
+}
