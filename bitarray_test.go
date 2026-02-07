@@ -1,6 +1,7 @@
 package bit_array
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -271,4 +272,56 @@ func TestBitArray_FillAllBits(t *testing.T) {
 	for i, w := range data {
 		assert.Equal(t, int64(-1), w, "bucket %d должен быть заполнен (все биты 1)", i)
 	}
+}
+
+func TestBitArray_Count(t *testing.T) {
+	ba := NewBitArray(1000)
+	assert.Equal(t, uint64(0), ba.Count())
+	ba.SetBitMust(0)
+	ba.SetBitMust(1)
+	ba.SetBitMust(100)
+	assert.Equal(t, uint64(3), ba.Count())
+	ba.SetBitMust(0) // duplicate
+	assert.Equal(t, uint64(3), ba.Count())
+}
+
+func TestBitArray_WriteTo_ReadFrom(t *testing.T) {
+	ba := NewBitArray(8_000_000)
+	ba.SetBitMust(1)
+	ba.SetBitMust(7999)
+	ba.SetBitMust(7_000_000)
+	var buf bytes.Buffer
+	n, err := ba.WriteTo(&buf)
+	assert.NoError(t, err)
+	assert.Greater(t, n, int64(0))
+	loaded := NewBitArray(1)
+	nn, err := loaded.ReadFrom(&buf)
+	assert.NoError(t, err)
+	assert.Equal(t, n, nn)
+	assert.Equal(t, ba.Capacity(), loaded.Capacity())
+	assert.Equal(t, ba.Count(), loaded.Count())
+	assert.True(t, loaded.GetBit(1))
+	assert.True(t, loaded.GetBit(7999))
+	assert.True(t, loaded.GetBit(7_000_000))
+}
+
+func TestBitArray_SetBits(t *testing.T) {
+	ba := NewBitArray(8_000_000)
+	indices := []uint64{1, 7999, 7_000_000, 1}
+	ba.SetBits(indices)
+	assert.Equal(t, uint64(3), ba.Count())
+	assert.True(t, ba.GetBit(1))
+	assert.True(t, ba.GetBit(7999))
+	assert.True(t, ba.GetBit(7_000_000))
+	// Bulk: every 500th
+	indices500 := make([]uint64, 0, 16000)
+	for i := uint64(0); i < 8000000; i += 500 {
+		indices500 = append(indices500, i)
+	}
+	ba2 := NewBitArray(8_000_000)
+	ba2.SetBits(indices500)
+	assert.Equal(t, uint64(16000), ba2.Count())
+	assert.True(t, ba2.GetBit(0))
+	assert.True(t, ba2.GetBit(7999500))
+	assert.False(t, ba2.GetBit(1))
 }

@@ -86,14 +86,33 @@ NewBitArray(N)
 | Создать по ёмкости в битах | `NewBitArray(capBits)` |
 | Создать из старых данных `[]int64` | `NewBitArrayFromData(data)` |
 | Установить/снять/инвертировать бит | `SetBit(i)`, `SetBitMust(i)`, `unSetBit(i)`, `inverseBit(i)` |
+| Массовая установка по списку индексов | `SetBits(indices []uint64)` — быстрее цикла SetBitMust, при пустом массиве строит sparseList за один проход |
 | Проверить бит | `GetBit(i) bool` |
+| Число установленных битов | `Count() uint64` |
 | Ёмкость в битах | `Capacity() uint64` |
 | Только непустые bucket'ы (без аллокации полного slice) | `SparseBuckets() map[uint64]int64` |
 | Полный массив слов (аллоцирует slice длины cap/64) | `GetData() []int64` |
 | «Все биты из other есть в t» | `t.Intersection(other) bool` |
 | Загрузить плотные данные «как есть» | `SetData(data []int64)` |
+| **Сохранить в БД / загрузить** | `WriteTo(w io.Writer)`, `ReadFrom(r io.Reader)` |
 
 **Рекомендация:** при разрежённых данных предпочитайте `SparseBuckets()` вместо `GetData()`, чтобы не выделять мегабайт под полный slice.
+
+### Сохранение и загрузка (как у Roaring)
+
+BitArray можно сериализовать в поток байт и сохранить в БД, затем быстро загрузить без пересчёта:
+
+```go
+var buf bytes.Buffer
+_, _ = ba.WriteTo(&buf)
+db.SaveBlob(buf.Bytes())
+
+// Загрузка
+loaded := &bit_array.BitArray{}
+_, _ = loaded.ReadFrom(bytes.NewReader(dbBlob))
+```
+
+Формат бинарный (магия + size, cap, тип хранения + данные). Подходит для BLOB в БД или файла.
 
 ### Параллельный доступ (thread-safe при чтении)
 
@@ -164,7 +183,8 @@ fmt.Println(ba2.GetBit(1), ba2.GetBit(2))  // true true
 
 ## Сравнение с другими библиотеками
 
-Запуск: `go test -bench=BenchmarkCompare -benchmem ./...`
+Запуск: `go test -bench=BenchmarkCompare -benchmem ./...`  
+Ёмкость задаётся в коде (`compareCap`, напр. 8M или 80M). Сравнение при **80M бит** — в [BENCHMARKS.md](BENCHMARKS.md).
 
 Участвуют: **bit_array** (наша), **bitset** (github.com/bits-and-blooms/bitset), **Roaring** (github.com/RoaringBitmap/roaring, сжатый битмап для множеств целых).
 
@@ -174,7 +194,7 @@ fmt.Println(ba2.GetBit(1), ba2.GetBit(2))  // true true
 |----------|-----------|--------|---------|
 | Только создание (New) | **0 B** | **~1 MB** | **0 B** |
 | 3 установленных бита | **~48 B** | ~1 MB | ~64 B |
-| 16k бит (каждый 500-й) | **~256 KB** | **~1 MB** | **~132 KB** |
+| 16k бит (каждый 500-й, SetBits) | **~65 KB** | **~1 MB** | ~132 KB |
 | Intersection (sparse) | **0 B** | **~1 MB** | **~144 B** |
 | Плотное заполнение | ~1 MB | ~1 MB | зависит от данных |
 
@@ -189,11 +209,9 @@ fmt.Println(ba2.GetBit(1), ba2.GetBit(2))  // true true
 | 3                 | 248 B     | 128 B   | **≈2×** |
 | 100               | ~9 KB     | ~8 KB   | ≈1.1× (паритет) |
 | 1 000             | ~73 KB    | **~12 KB** | **≈6×** |
-| 16 000 (каждый 500-й) | ~1.7 MB* | **~129 KB** | **≈10–13×** |
+| 16 000 (каждый 500-й, **SetBits**) | **~65 KB** | ~129 KB | **bit_array ≈2× компактнее** |
 
-\* У bit_array пик при построении (переаллокации); в установившемся виде данные ~256 KB. Roaring стабильно ~132 KB.
-
-Чем больше разрежённое множество, тем сильнее выигрыш Roaring за счёт сжатия (при тысячах битов — в разы).
+При массовой установке через **SetBits** в режиме «один бит на bucket» bit_array хранит индексы в **sparseIndices32** (4 байта на бит) и по памяти выигрывает у Roaring (~65 KB vs ~132 KB).
 
 ### GetBit: результаты
 
@@ -214,7 +232,8 @@ fmt.Println(ba2.GetBit(1), ba2.GetBit(2))  // true true
 | SetBit (3 бита) | **~8 ns, 0 allocs** | **~3.7 ns** | ~75 ns, 4 allocs |
 | GetBit (sparse) | ~3.2 ns | **~0.44 ns** | ~4.7 ns |
 | GetBit (dense) | ~1.7 ns | **~0.74 ns** | — |
-| FillEvery500 (16k бит) | ~346 µs | **~123 µs** | **~106 µs**, 132 KB |
+| FillEvery500 (16k бит, цикл SetBit) | ~346 µs | **~123 µs** | **~106 µs**, 132 KB |
+| **FillEvery500 через SetBits (bulk)** | **~57 µs**, **~65 KB** | — | ~106 µs, 132 KB |
 | Intersection (sparse) | **~9 ns, 0 allocs** | ~127 µs, 1 MB | ~84 ns, 144 B |
 
-**Итог:** по **GetBit** быстрее всего **bitset** (прямой доступ к массиву). bit_array — посередине (в dense ~1.7 ns, в sparse ~3.2 ns). Roaring в sparse ~4.7 ns. По остальным операциям: bit_array сильнее на New и Intersection; Roaring — на сжатии и памяти при большом разреженном множестве.
+**Итог:** по **массовой установке** (16k бит) **bit_array** с **SetBits** быстрее Roaring (~57 µs vs ~106 µs) и **компактнее по памяти** (~65 KB vs ~132 KB). По **GetBit** быстрее всего **bitset** (прямой доступ к массиву). bit_array — посередине (в dense ~1.7 ns, в sparse ~3.2 ns). Roaring в sparse ~4.7 ns. По остальным операциям: bit_array сильнее на New и Intersection; Roaring — при **16k бит циклом SetBit** всё ещё компактнее (~1.75×); при 3/100/1000 бит мы наравне или лучше (см. [BENCHMARKS.md](BENCHMARKS.md)).
